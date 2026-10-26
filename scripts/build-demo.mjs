@@ -48,6 +48,12 @@ const out = template
   .replace('/*__ENGINE__*/', () => engineBundle)
   .replace('/*__APP__*/', () => app);
 
+// Normalise to LF so the output is identical whether the sources were checked
+// out on Windows (CRLF working tree) or Linux, and so CI's drift check works.
+const CR = String.fromCharCode(13);
+const LF = String.fromCharCode(10);
+const normalised = out.split(CR + LF).join(LF);
+
 const target = path.join(ROOT, 'demo/index.html');
-fs.writeFileSync(target, out, 'utf8');
+fs.writeFileSync(target, normalised, 'utf8');
 console.log(`wrote ${path.relative(ROOT, target)} (${(fs.statSync(target).size / 1024).toFixed(1)} KiB)`);

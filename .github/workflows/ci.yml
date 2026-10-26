@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # The matrix exists because two bugs in this project family were invisible
+    # on the development machine: APIs that only exist on Node 22, and LF/CRLF
+    # differences in the recorded source hashes.
+    name: node-${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Show runtime
+        run: node --version
+      - name: Unit tests
+        run: npm test
+      - name: Correctness sweep
+        run: node scripts/verify.mjs
+      - name: Regenerate wrapper and fail on drift
+        shell: bash
+        run: |
+          cp engine/_upstream.generated.mjs /tmp/before.mjs
+          node scripts/build-upstream.mjs
+          diff -q /tmp/before.mjs engine/_upstream.generated.mjs
+      - name: Regenerate demo and fail on drift
+        shell: bash
+        run: |
+          cp demo/index.html /tmp/demo-before.html
+          node scripts/build-demo.mjs
+          diff -q /tmp/demo-before.html demo/index.html
+
+  deploy:
+    name: deploy-demo
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Rebuild demo from source
+        run: node scripts/build-demo.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: demo
+      - id: deployment
+        uses: actions/deploy-pages@v4
