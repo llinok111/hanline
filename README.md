@@ -1,82 +1,176 @@
-## TeX line breaking algorithm in JavaScript
+# hanline
 
-This is an implementation of the [Knuth and Plass line breaking algorithm](http://www3.interscience.wiley.com/journal/113445055/abstract) using JavaScript. The goal of this project is to optimally set justified text in the browser, and ultimately provide a library for various line breaking algorithms in JavaScript.
+**Knuth–Plass optimal line breaking for Chinese, Japanese and Korean text.**
 
-The paragraph below is set using a JavaScript implementation of the classic Knuth and Plass algorithm as used in TeX. The numbers on the right of each line are the stretching or shrinking ratio compared to the optimal line width. This example uses a default space of 1/3 em, with a stretchability and shrink-ability of 1/6 em and 1/9 em respectively.
+`hanline` takes the paragraph-breaking solver from [bramstein/typeset](https://github.com/bramstein/typeset) — a faithful JavaScript port of the Knuth–Plass algorithm that TeX uses — and gives it what it never had: a CJK line model. Chinese has no inter-word spaces, so TeX's glue has nothing to stretch and the upstream solver cannot set a Chinese paragraph at all.
 
-![](https://github.com/bramstein/typeset/raw/master/typeset-with-ratio.png)
+```
+在古老的时代，当许愿还能实现的时候，有一位国王，他的女儿们都很美丽。
+├─ upstream typeset ─────────────►  0 lines (paragraph is one indivisible box)
+└─ hanline ──────────────────────►  3 lines, badness 0.0, kinsoku violations 0
+```
 
-The following paragraph is set by a browser using `text-align: justify`. Notice the lines in the paragraph have, on average, greater inter-word spacing than the Knuth and Plass version, which is successful at minimizing the inter-word spacing over all lines.
+## Why this exists
 
-![](https://github.com/bramstein/typeset/raw/master/typeset-browser.png)
+The gap is not a matter of taste; it is measurable at the forked commit `48ebb55`:
 
-The browser also ends up with ten lines instead of the nine lines found by the Knuth and Plass line breaking algorithm. This comparison might not be completely fair since we don't know the default inter-word space used by the browser (nor its stretching and shrinking parameters.) Experimental results however indicate the values used in most browsers are either identical or very similar. The next section explains how the ratio values for the browser were calculated.
+| Check | Result |
+|---|---|
+| `grep -rniE "cjk\|chinese\|japanese\|korean\|kinsoku" src/ lib/` | no matches |
+| `src/formatter.js` word split | `text.match(/\S+/g)` — a Chinese paragraph yields **one** token |
+| Upstream `linebreak()` on a 136-character Chinese paragraph | **`breaks.length === 0`** — the demo prints "Paragraph can not be set with the given tolerance." |
+| Upstream test suite | **none** (`test/` does not exist) |
 
-### Measuring the quality of browser line breaks
+Meanwhile every off-the-shelf CJK wrapper in the ecosystem — Fabric.js `_wrapLine`, `canvas-textbox`, the common `measureText` accumulation loop — uses **greedy** first-fit: walk characters until the width overflows, then break. Greedy is locally reasonable and globally poor: it cannot see that breaking one character earlier would have let the next three lines fit evenly.
 
-Unfortunately there is no API to retrieve the positions of the line breaks the browser inserted, so we'll have to resort to some trickery. By wrapping each word in an invisible `<span>` element and retrieving its `y` position we can find out when a new line starts. If the `y` position of the current word is different from the previous word we know a new line has started. This way a paragraph is split up in several individual lines.
+`hanline` does two things:
 
-The ratios are then calculated by measuring the difference between the width of each line when `text-align` is set to `justify` and when it is set to `left`. This difference is then divided by the amount of stretchability of the line: i.e. the number of spaces multiplied by the stretch width for spaces. Although we don't know the actual stretchability we can use 1/6 em, just like the Knuth and Plass algorithm, if we only use it for comparison.
+1. **Gives the solver a CJK node model.** Every legal break becomes a zero-width glue carrying a little stretch and shrink; full-width commas and periods shed their blank right half at a line end; Han/Latin boundaries get an optical quarter-em.
+2. **Keeps greedy around as a baseline**, on the *same node list*, so the quality claim is falsifiable rather than asserted.
 
-### Assisted browser line breaks
+## Install and run
 
-The line breaking algorithm can also be used to correct the line breaks made by the browser. The easiest way to do is to split a text up into lines and adjust the CSS `word-spacing` property. Unfortunately, Webkit based browsers do not support sub-pixel word-spacing. Alternatively, we can absolute position each word or split the line into segmants with integer word spacing. You can see the latter approach in action on the [Flatland line breaking example.](examples/flatland/)
+No build step, no dependencies. Node ≥ 18.17.
 
-### Examples
+```bash
+git clone https://github.com/llinok111/hanline.git
+cd hanline
+node bin/hanline.mjs --text "在古老的时代，当许愿还能实现的时候，有一位国王。" --width 18
+```
 
-The line breaking algorithm is not only capable of justifying text, it can perform all sorts of alignment with an appropriate selection of boxes, glue and penalties. It is also possible to give it varying line widths to flow text around illustrations, asides or quotes. Alternatively, varying line widths can be used to create interesting text shapes as demonstrated below.
+```
+width 18.00em (288px), 2 lines
+  1 +  0.83  18.00/18.00em │ 在古老的时代，当许愿还能实现的时候，
+  2    0.00   5.50/18.00em │ 有一位国王。
 
-#### Ragged right and centered alignment
+  lines=2  badness=57.9  worstRatio=0.83  widthSD=0.000  lastFill=0.31
+  kinsokuViolations=0  overflowLines=0
+```
 
-The following example is set ragged right. Ragged right is not simply justified text with fixed width inter-word spacing. Instead the algorithm tries to minimize the amount of white space at the end of each sentence over the whole paragraph. It also attempts to reduce the number of words that are "sticking out" of the margin.
+Compare against greedy on the identical nodes:
 
-![](https://github.com/bramstein/typeset/raw/master/typeset-right.png)
+```bash
+node bin/hanline.mjs --file article.txt --width 17.5 --compare
+```
 
-Ragged left text can be achieved by using a ragged right text and aligning its line endings with the left border. The example below is set centered. Again this is not simply a centering of justified text, but instead an attempt at minimizing the line lengths over the whole paragraph.
+Machine-readable, and usable as a CI gate:
 
-![](https://github.com/bramstein/typeset/raw/master/typeset-centered.png)
+```bash
+node bin/hanline.mjs --file article.txt --width 400px --json
+node bin/hanline.mjs --file article.txt --width 24 --check   # exits 1 on any rule violation
+```
 
-#### Variable line width
+### As a library
 
-By varying the line width for a paragraph it is possible to flow the text around illustrations, asides, quotes and such. The example below leaves a gap for an illustration by setting the line widths temporarily shorter and then reverting. You can also see that the algorithm chose to hyphenate certain words to achieve acceptable line breaking.
+```js
+import { layout } from './engine/index.mjs';
 
-![](https://github.com/bramstein/typeset/raw/master/typeset-flow.png)
+const result = layout(text, {
+  widthEm: 24,       // or width: 384 (px)
+  em: 16,
+  measure: (s) => ctx.measureText(s).width,  // optional: real font metrics
+});
 
-It is also possible to make some non-rectangular shapes, as shown in the examples below. In the first example, the text is laid out using an increasing line width and center aligning each line. This creates a triangular shape.
+result.lines.forEach(l => {
+  console.log(l.text, l.ratio, l.width, l.fill);
+});
+// result.metrics: { totalBadness, worstRatio, widthSD, lastLineFill,
+//                   kinsokuViolations, overflowLines, lineCount }
+```
 
-![](https://github.com/bramstein/typeset/raw/master/typeset-triangle.png)
+Pass `measure` when you have a real font (canvas, `opentype.js`, a PDF engine). Omit it and the module uses a Unicode-based fallback: full-width 1em, Latin 0.5em, space 0.25em.
 
-Using some basic math it is also possible to set text in circles or even arbitrary polygons. Below is an example of text set inside a circle.
+### Browser
 
-![](https://github.com/bramstein/typeset/raw/master/typeset-circle.png)
+`demo/index.html` is fully self-contained (92 KiB, zero network requests). Open it from `file://` — no server needed. It renders the same paragraph twice, once through the optimal solver and once through greedy, with per-line ratios in the gutter.
 
-### To-do
+## What the numbers actually are
 
-The following are some extensions to the algorithm discussed in the original paper, which I intend to implement (at some point.)
+Measured by `npm run bench` on the eight-paragraph corpus in `scripts/bench.mjs`, fourteen widths from 10em to 40em, Node 22 on Windows. **Both engines consume the same node list** — only the break policy differs.
 
-- [Hanging punctuation](http://en.wikipedia.org/wiki/Hanging_punctuation). The following quote from the original paper explains how to implement it using the box, glue and penalty model:
+| | Knuth–Plass | greedy |
+|---|---|---|
+| cases evaluated | 99 feasible (+13 fallback) | 99 |
+| strictly lower badness | **42** | 1 |
+| identical badness | 56 | 56 |
+| **median badness** | **21.09** | **123.00** |
+| mean badness | 1 390.92 | 250 439.16 |
+| perfect fits (badness 0) | 20 | 20 |
 
-  > Some people prefer to have the right edge of their text look ‘solid’,
-  > by setting periods, commas, and other punctuation marks (including
-  > inserted hyphens) in the right-hand margin. For example, this practice
-  > is occasionally used in contemporary advertising.
+The mean is dominated by a handful of cases where greedy's line lands far short of the measure and has almost no stretch left to absorb the gap; the median (83% lower) is the honest summary. The single case where greedy wins is reported below rather than hidden.
 
-  > It is easy to get inserted hyphens into the margin: We simply let the
-  > width of the corresponding penalty item be zero. And it is almost as
-  > easy to do the same for periods and other symbols, by putting every such
-  > character in a box of width zero and adding the actual symbol width to
-  > the glue that follows. If no break occurs at this glue, the accumulated
-  > width is the same as before; and if a break does occur, the line will be
-  > justified as if the period or other symbol were not present.
+Solver cost, median of 9 runs on the same machine, 932 nodes / 726 characters:
 
-- Compare quality against line-breaking implemented by [Internet Explorer's `text-justify` CSS property](http://msdn.microsoft.com/en-us/library/ms534671%28VS.85%29.aspx).
-- Figure out how to deal with dynamic paragraphs (i.e. paragraphs being edited) as their ratios will change during editing and thus visibly move around.
+```
+buildNodes + solve (layout)   0.94 ms
+solve only, Knuth-Plass       0.18 ms   (min 0.16, max 0.72)
+solve only, greedy            0.20 ms   (min 0.09, max 0.34)
+```
 
-### References
+The optimal solver is **not** meaningfully slower than greedy at this scale. Knuth–Plass is O(n·|active|) with the active list bounded by tolerance, and the greedy path pays for chunk construction.
 
-These are the resources I found most useful while implementing the line breaking algorithm.
+## Correctness
 
-- [Digital Typography, Donald E. Knuth](http://www.amazon.com/Digital-Typography-Center-Language-Information/dp/1575860104/)
-- [Breaking paragraphs into lines, Donald E. Knuth, Michael F. Plass](https://onlinelibrary.wiley.com/doi/10.1002/spe.4380111102)
-- [Knuth & Plass line-breaking Revisited](http://defoe.sourceforge.net/folio/knuth-plass.html)
-- [Wikipedia: Word wrap](http://en.wikipedia.org/w/index.php?title=Word_wrap)
+```
+$ npm test
+# tests 68   # pass 68   # fail 0
+
+$ node scripts/verify.mjs
+checked 120 (text,width) combinations
+hard failures (glyph loss / forbidden break / over-width): 0
+KP fallback to greedy: 16
+overfull boxes (unbreakable run wider than measure): 5
+badness vs greedy — KP better: 44, tie-or-worse: 60
+```
+
+`verify.mjs` asserts, for 8 corpus paragraphs × 15 widths: no glyph lost or duplicated, no line starting with `，。、；：？！）〕］｝〉》」』】”’` and no line ending with `（〔［｛〈《「『【“‘`, and no line wider than the measure except an overfull box.
+
+## How it works
+
+The whole design rests on one rule that the upstream solver makes unavoidable: **`linebreak()` treats every glue node as a break opportunity**. There is no "glue but don't break here" node. So:
+
+- A place that may break gets exactly **one** glue, carrying every gap that belongs there (closer tail + Han/Latin gap + paragraph elasticity).
+- A place that must not break gets **no glue at all**; its width is folded into the adjacent box.
+- Adjacent glue is **merged**, because TeX merges it and because two glue nodes in a row create a zero-width chunk between two break points that then breaks every width subtraction downstream.
+
+Widths come from three places, all of them real typographic quantities rather than tuning knobs:
+
+| Source | Model | Reference |
+|---|---|---|
+| Break opportunity | glue 0 width, ±0.04em | JIS X 4051 行の調整処理 |
+| Full-width `，。、；：` at line end | ink at 0.5em, tail 0.5em of shrink | CLREQ 3.1.6 punctuation squeezing |
+| Han ↔ Latin boundary | glue 0.25em, ±1/12em | 盘古之白 / `text-spacing` |
+
+`？` `！` `…` `—` are closers but deliberately **not** squeezable: their glyphs fill the em box, and dropping half of it would clip them. `…` and `—` are also forced to 1em despite Unicode marking them East Asian Width "Ambiguous" — GB/T 15834 sets the ellipsis and dash at two full characters, and treating them as half-width silently shortens every line containing them.
+
+## Known limitations
+
+These are measured, not hedged.
+
+1. **Narrow measures can be infeasible.** A 21-character filename inside a 10em column leaves no legal break sequence. `layout()` falls back to greedy and says so (`feasible: false`, `fallback: 'greedy'`); `--check` exits 1. 16 of 120 verify combinations hit this. Raising `stretch` past 0.04em reduces it at the cost of looser tracking.
+2. **`maxTolerance` bounds the search.** Ratio must stay ≤ tolerance (default 3, escalated to 7). Beyond that the solver refuses rather than emitting 0.8em letter-spacing.
+3. **The upstream solver is not strictly globally optimal.** In `long-word@28em` it returns badness 18.34 while greedy — on the *same nodes*, at *every* tolerance from 1 to 20 — returns 16.99. The lower-demerits solution exists in the search space and is never found. This points at the active-node bookkeeping around the `TODO` in `src/linebreak.js:209`; it is upstream's issue, not something this fork changed.
+4. **No hyphenation for Latin inside CJK.** Upstream ships Hypher with en-US patterns and `formatter.js` uses it, but the CJK node builder does not — a long Latin token is indivisible. This is why limitation 1 exists.
+5. **No vertical writing**, and no character-grid justification (均等割) beyond uniform glue.
+
+## What changed relative to upstream
+
+`src/`, `lib/` and `examples/` are **byte-identical** to `bramstein/typeset@48ebb55`. Their sha256 is recorded in `engine/_upstream.generated.mjs` and re-checked by `test/upstream.test.mjs`, so `git log -- src/linebreak.js` still shows only upstream commits.
+
+New in `engine/`: `chars.mjs` (classification + widths), `nodes.mjs` (the CJK model — the actual work), `index.mjs` (API), `metrics.mjs`, `greedy.mjs` (baseline). Plus `bin/`, `demo/`, `test/`, `scripts/`.
+
+Upstream English behaviour is pinned by regression tests: the same paragraph still lays out in 5 lines at 384px, still produces 52 boxes, and still produces the English line count it did before any of this code existed. The original upstream README is preserved as `README.upstream.md`.
+
+## License
+
+BSD-2-Clause, same as upstream. `LICENSE` is upstream's text, unmodified. `NOTICE` records the fork point, which files are verbatim, and which are new. The upstream copyright notice (Bram Stein) is retained.
+
+## Reproducing everything above
+
+```bash
+npm test                 # 68 assertions
+node scripts/verify.mjs  # 120-combination correctness sweep
+node scripts/bench.mjs   # the quality and timing tables
+npm run build            # regenerate the ESM wrapper from src/ + lib/
+node scripts/build-demo.mjs   # rebuild demo/index.html
+```

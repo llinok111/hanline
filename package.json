@@ -1,0 +1,46 @@
+{
+  "name": "hanline",
+  "version": "0.1.0",
+  "description": "Knuth-Plass optimal line breaking for CJK text: kinsoku-aware, punctuation-squeezing, quantifiably better than greedy wrapping.",
+  "type": "module",
+  "main": "./engine/index.mjs",
+  "exports": {
+    ".": "./engine/index.mjs",
+    "./metrics": "./engine/metrics.mjs"
+  },
+  "bin": {
+    "hanline": "./bin/hanline.mjs"
+  },
+  "files": [
+    "engine",
+    "bin",
+    "src",
+    "lib",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build-upstream.mjs",
+    "test": "node --test",
+    "bench": "node scripts/bench.mjs"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "keywords": [
+    "cjk",
+    "chinese",
+    "line-breaking",
+    "knuth-plass",
+    "justification",
+    "kinsoku",
+    "typesetting",
+    "canvas"
+  ],
+  "license": "BSD-2-Clause",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/llinok111/hanline.git"
+  }
+}

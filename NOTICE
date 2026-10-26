@@ -1,0 +1,46 @@
+hanline
+=======
+
+Copyright (c) 2026 llinok111
+
+This project is a derivative work of:
+
+  bramstein/typeset — "TeX line breaking algorithm in JavaScript"
+  https://github.com/bramstein/typeset
+  Upstream commit: 48ebb5547de116db57e14454e19767e4ff9b2266 (2026-06-20)
+  Copyright 2009-2010, 2026 Bram Stein
+  Licensed under the BSD-2-Clause license (see LICENSE, reproduced verbatim)
+
+Files kept byte-identical to upstream, at their original paths:
+
+  src/linked-list.js
+  src/linebreak.js
+  src/formatter.js
+  lib/hypher.js
+  lib/en-us.js
+  lib/jquery-1.4.2.js      (used only by the upstream examples/, unchanged)
+  examples/                (upstream demo pages, unchanged)
+  LICENSE                  (upstream text, unchanged)
+
+`git log -- src/linebreak.js` therefore still shows only upstream commits.
+The sha256 of every vendored file is recorded in
+`engine/_upstream.generated.mjs` and re-verified by `test/upstream.test.mjs`.
+
+New work, licensed under the BSD 2-Clause License as well:
+
+  engine/chars.mjs         CJK character classification and advance widths
+  engine/nodes.mjs         box/glue/penalty model for CJK (the core addition)
+  engine/index.mjs         public layout API
+  engine/metrics.mjs       quality metrics
+  engine/greedy.mjs        greedy baseline used for comparison
+  engine/_upstream.generated.mjs   generated ESM wrapper (do not edit)
+  bin/hanline.mjs          CLI
+  demo/                    browser demo
+  test/                    test suite
+  scripts/                 build, verification and benchmark harnesses
+  README.md, NOTICE        this notice
+
+No upstream source file was modified. The CJK capability does not exist
+upstream in any form: `grep -rniE "cjk|chinese|japanese|korean|kinsoku" src/ lib/`
+returns nothing at the forked commit, and `src/formatter.js` splits on /\S+/,
+so a Chinese paragraph becomes a single indivisible box.
