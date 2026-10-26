@@ -219,7 +219,10 @@
       var chars = Array.from(line.text);
       var natural = chars.reduce(function (s, c) { return s + measure(c); }, 0);
       var isLast = idx === gr.lines.length - 1;
-      var extra = isLast ? 0 : (measurePx - natural) / Math.max(1, chars.length - 1);
+      // Greedy never compresses below natural width: if the line already
+      // overflows, spread no gap at all rather than emit a negative one.
+      var extra = (isLast || natural >= measurePx) ? 0
+        : (measurePx - natural) / Math.max(1, chars.length - 1);
       ctx.fillStyle = COLORS.ink;
       chars.forEach(function (c, ci) {
         ctx.fillText(c, x, y);
